@@ -1,6 +1,9 @@
 <template>
   <div class="recipe">
-    <h2>{{ recipe.title }}</h2>
+    <div class="title-row">
+      <h2>{{ recipe.title }}</h2>
+      <button class="copy-btn" @click="copyToClipboard">{{ copyLabel }}</button>
+    </div>
 
     <!-- Ingredients -->
     <section class="ingredients">
@@ -53,6 +56,7 @@ const props = defineProps({
 })
 
 const scaleFactor = ref(1)
+const copyLabel = ref('Copy')
 
 // Flat list of all ingredients across all subrecipes for lookup by id
 const allIngredients = computed(() =>
@@ -88,6 +92,48 @@ function sliderStep(baseAmount) {
   return 1
 }
 
+function renderStep(step) {
+  return step.segments
+    .map((seg) =>
+      seg.type === 'text'
+        ? seg.content
+        : `${seg.matched_text} [${scaledDisplayAmount(seg.ingredient_id)}]`
+    )
+    .join('')
+}
+
+function buildPlainText() {
+  const lines = [props.recipe.title, '']
+
+  lines.push('INGREDIENTS')
+  for (const sub of props.recipe.subrecipes) {
+    if (sub.name) lines.push(sub.name)
+    for (const ing of sub.ingredients) {
+      const amount = displayAmount(ing)
+      lines.push(amount ? `${amount} ${ing.item}` : ing.item)
+    }
+    lines.push('')
+  }
+
+  lines.push('DIRECTIONS')
+  props.recipe.directions.forEach((step, i) => {
+    lines.push(`${i + 1}. ${renderStep(step)}`)
+  })
+
+  return lines.join('\n').trim()
+}
+
+async function copyToClipboard() {
+  try {
+    await navigator.clipboard.writeText(buildPlainText())
+    copyLabel.value = 'Copied!'
+    setTimeout(() => { copyLabel.value = 'Copy' }, 2000)
+  } catch {
+    copyLabel.value = 'Failed'
+    setTimeout(() => { copyLabel.value = 'Copy' }, 2000)
+  }
+}
+
 function formatNumber(n) {
   if (n === null || n === undefined) return ''
   // Round to nearest clean fraction
@@ -114,12 +160,37 @@ function formatNumber(n) {
 </script>
 
 <style scoped>
-.recipe h2 {
-  font-size: 1.6rem;
-  font-weight: normal;
+.title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
   margin-bottom: 2rem;
   border-bottom: 1px solid #ddd;
   padding-bottom: 0.75rem;
+}
+
+.recipe h2 {
+  font-size: 1.6rem;
+  font-weight: normal;
+}
+
+.copy-btn {
+  flex-shrink: 0;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  background: transparent;
+  border: 1px solid #aaa;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #555;
+}
+
+.copy-btn:hover {
+  background: #f0f0f0;
+  border-color: #888;
+  color: #2c2c2c;
 }
 
 section {

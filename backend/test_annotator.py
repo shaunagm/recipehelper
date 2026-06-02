@@ -111,6 +111,24 @@ class TestAnnotateDirections:
         assert len(refs) == 1
         assert refs[0]["ingredient_id"] == "0"
 
+    def test_multiword_item_matches_first_word(self):
+        # "vanilla extract" should match "vanilla" in directions
+        ingredients = [make_ingredient(0, "vanilla extract")]
+        directions = ["Stir in the vanilla and mix well."]
+        result = annotate_directions(directions, ingredients)
+
+        refs = ref_segments(result[0])
+        assert len(refs) == 1
+        assert refs[0]["ingredient_id"] == "0"
+
+    def test_generic_first_word_not_used_as_seed(self):
+        # "baking soda" should NOT match "baking" in "baking sheets"
+        ingredients = [make_ingredient(0, "baking soda")]
+        directions = ["Drop spoonfuls onto ungreased baking sheets."]
+        result = annotate_directions(directions, ingredients)
+
+        assert len(ref_segments(result[0])) == 0
+
     def test_multiword_item_matches_full_phrase_preferentially(self):
         # When the full phrase appears, it should match (not just the last word)
         ingredients = [make_ingredient(0, "all-purpose flour")]
@@ -143,6 +161,35 @@ class TestAnnotateDirections:
 
         refs = ref_segments(result[0])
         assert len(refs) == 1
+
+    def test_specific_and_generic_sugar_both_annotated(self):
+        # "brown sugar" and "granulated sugar" both have "sugar" as a seed,
+        # but "brown sugar" in the text should match the brown sugar ingredient
+        # specifically, and not block granulated sugar from matching elsewhere.
+        ingredients = [
+            make_ingredient(0, "granulated sugar"),
+            make_ingredient(1, "brown sugar"),
+        ]
+        directions = ["Mix the granulated sugar with the brown sugar."]
+        result = annotate_directions(directions, ingredients)
+
+        ref_ids = {s["ingredient_id"] for s in ref_segments(result[0])}
+        assert "0" in ref_ids
+        assert "1" in ref_ids
+
+    def test_longer_match_preferred_over_shorter_at_same_position(self):
+        # "brown sugar" should be preferred over "sugar" when both could match
+        # starting at or near the same position.
+        ingredients = [
+            make_ingredient(0, "sugar"),
+            make_ingredient(1, "brown sugar"),
+        ]
+        directions = ["Add the brown sugar."]
+        result = annotate_directions(directions, ingredients)
+
+        refs = ref_segments(result[0])
+        assert len(refs) == 1
+        assert refs[0]["ingredient_id"] == "1"  # brown sugar, not plain sugar
 
     def test_segments_reconstruct_original_text(self):
         ingredients = [make_ingredient(0, "flour")]
