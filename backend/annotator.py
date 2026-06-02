@@ -13,11 +13,23 @@ def build_pattern(item: str) -> re.Pattern | None:
 
     item = item.strip().lower()
 
-    # Seed with full item and, for multi-word items, the last word
+    # Words too generic to use as a first-word seed — they appear constantly
+    # in cooking directions independent of any specific ingredient.
+    _GENERIC_FIRST_WORDS = {
+        "baking", "cooking", "ground", "fresh", "dried", "frozen",
+        "heavy", "light", "dark", "extra", "raw", "cooked", "all",
+        "half", "whole", "large", "small", "medium",
+    }
+
+    # Seed with full item; for multi-word items also try first and last word
+    # so "vanilla extract" matches "vanilla" and "all-purpose flour" matches "flour"
     words = item.split()
     seeds = {item}
-    if len(words) > 1 and len(words[-1]) >= 2:
-        seeds.add(words[-1])
+    if len(words) > 1:
+        if len(words[-1]) >= 2:
+            seeds.add(words[-1])
+        if len(words[0]) >= 3 and words[0] not in _GENERIC_FIRST_WORDS:
+            seeds.add(words[0])
 
     variants = set()
     for seed in seeds:
@@ -65,34 +77,41 @@ def annotate_directions(directions: list[str], ingredients: list[dict]) -> list[
 
 def _split_step(text: str, patterns: list) -> list[dict]:
     """
-    Iteratively finds the earliest match across all ingredient patterns
-    and splits the text into segments. Each ingredient is annotated at
-    most once per step.
+    Iteratively finds the earliest (and longest, on ties) match across all
+    ingredient patterns, splits the text into segments, and ensures each
+    ingredient is annotated at most once per step.
+
+    Deduplication works by position: when multiple ingredient patterns match
+    at the same start position (e.g. three "butter" entries all matching the
+    same word "butter"), all of them are blocked after the first annotation.
+    Patterns that match at a DIFFERENT position (e.g. "sugar" at pos 20 vs
+    "brown sugar" at pos 14) are NOT blocked by each other.
     """
     segments = []
     remaining = text
     annotated_ids = set()
 
     while remaining:
-        best_match = None
-        best_id = None
-        best_start = len(remaining)
-
+        # Collect all matches grouped by their start position
+        matches_by_pos: dict[int, list] = {}
         for ing_id, pat in patterns:
             if ing_id in annotated_ids:
                 continue
             m = pat.search(remaining)
-            if m and m.start() < best_start:
-                best_match = m
-                best_id = ing_id
-                best_start = m.start()
+            if m:
+                matches_by_pos.setdefault(m.start(), []).append((ing_id, m))
 
-        if best_match is None:
+        if not matches_by_pos:
             segments.append({"type": "text", "content": remaining})
             break
 
-        if best_match.start() > 0:
-            segments.append({"type": "text", "content": remaining[:best_match.start()]})
+        # Pick the earliest position; among ties prefer the longest match
+        best_start = min(matches_by_pos)
+        competing = matches_by_pos[best_start]
+        best_id, best_match = max(competing, key=lambda x: len(x[1].group(0)))
+
+        if best_start > 0:
+            segments.append({"type": "text", "content": remaining[:best_start]})
 
         matched_text = best_match.group(0)
         segments.append({
@@ -101,13 +120,11 @@ def _split_step(text: str, patterns: list) -> list[dict]:
             "matched_text": matched_text,
         })
 
-        # Mark all ingredients whose pattern matches this same word as used,
-        # so duplicate-named ingredients (e.g. three "butter" entries) don't
-        # re-annotate later occurrences of the same word in this step.
-        for other_id, other_pat in patterns:
-            if other_pat.search(matched_text):
-                annotated_ids.add(other_id)
+        # Block all ids that competed at this exact position — they all refer
+        # to the same occurrence of the word and shouldn't be matched again.
+        for other_id, _ in competing:
+            annotated_ids.add(other_id)
 
-        remaining = remaining[best_match.end():]
+        remaining = remaining[best_start + len(matched_text):]
 
     return segments
