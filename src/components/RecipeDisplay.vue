@@ -5,6 +5,25 @@
       <button class="copy-btn" @click="copyToClipboard">{{ copyLabel }}</button>
     </div>
 
+    <!-- Unit toggle -->
+    <div class="controls-row">
+      <span class="controls-label">Units:</span>
+      <div class="unit-toggle">
+        <button
+          :class="{ active: unitSystem === 'imperial' }"
+          @click="unitSystem = 'imperial'"
+        >Imperial</button>
+        <button
+          :class="{ active: unitSystem === 'metric' }"
+          @click="unitSystem = 'metric'"
+        >Metric</button>
+      </div>
+      <span
+        class="unit-note"
+        title="Volume is converted as volume (e.g. 1 cup → 240 mL), not by weight (grams). This is how the recipe measures it, not necessarily how metric bakers would measure it."
+      >ⓘ</span>
+    </div>
+
     <!-- Ingredients -->
     <section class="ingredients">
       <h3>Ingredients</h3>
@@ -13,7 +32,11 @@
         <ul>
           <li v-for="ing in sub.ingredients" :key="ing.id">
             <div class="ingredient-row">
-              <span class="amount">{{ displayAmount(ing) }}</span>
+              <span
+                class="amount"
+                :class="{ approx: amountInfo(ing).prefix }"
+                :title="amountInfo(ing).tooltip || undefined"
+              >{{ amountInfo(ing).prefix }}{{ amountInfo(ing).label }}</span>
               <span class="item">{{ ing.item }}</span>
             </div>
             <input
@@ -37,9 +60,13 @@
       <ol>
         <li v-for="(step, i) in recipe.directions" :key="i">
           <span v-for="(seg, j) in step.segments" :key="j">
-            <span v-if="seg.type === 'text'">{{ seg.content }}</span>
+            <span v-if="seg.type === 'text'">{{ convertedText(seg.content) }}</span>
             <span v-else class="inline-amount">
-              {{ seg.matched_text }}<span class="bracket"> [{{ scaledDisplayAmount(seg.ingredient_id) }}]</span>
+              {{ seg.matched_text }}<span
+                class="bracket"
+                :class="{ approx: scaledAmountInfo(seg.ingredient_id).prefix }"
+                :title="scaledAmountInfo(seg.ingredient_id).tooltip || undefined"
+              > [{{ scaledAmountInfo(seg.ingredient_id).prefix }}{{ scaledAmountInfo(seg.ingredient_id).label }}]</span>
             </span>
           </span>
         </li>
@@ -50,6 +77,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { convertIngredient, convertTemperatureInText } from '../unitConverter.js'
 
 const props = defineProps({
   recipe: { type: Object, required: true },
@@ -57,6 +85,7 @@ const props = defineProps({
 
 const scaleFactor = ref(1)
 const copyLabel = ref('Copy')
+const unitSystem = ref('imperial')
 
 // Flat list of all ingredients across all subrecipes for lookup by id
 const allIngredients = computed(() =>
@@ -68,16 +97,16 @@ function scaledAmount(ing) {
   return ing.amount * scaleFactor.value
 }
 
-function displayAmount(ing) {
-  if (ing.amount === null) return ''
-  const val = scaledAmount(ing)
-  return formatNumber(val) + (ing.unit ? ' ' + ing.unit : '')
+// Returns { label, prefix, tooltip, clipExtra } for an ingredient at current scale + unit system.
+function amountInfo(ing) {
+  const scaled = scaledAmount(ing)
+  return convertIngredient(scaled, ing.unit, unitSystem.value)
 }
 
-function scaledDisplayAmount(ingredientId) {
+function scaledAmountInfo(ingredientId) {
   const ing = allIngredients.value.find((i) => i.id === ingredientId)
-  if (!ing) return ''
-  return displayAmount(ing)
+  if (!ing) return { label: '', prefix: '', tooltip: null, clipExtra: null }
+  return amountInfo(ing)
 }
 
 function onSlider(ing, newValue) {
@@ -92,13 +121,21 @@ function sliderStep(baseAmount) {
   return 1
 }
 
+// Apply temperature conversion to a direction text segment.
+function convertedText(content) {
+  return convertTemperatureInText(content, unitSystem.value)
+}
+
+// Build a plain-text representation of a direction step for the clipboard.
+// Includes exact values and originals in parentheses where relevant.
 function renderStep(step) {
   return step.segments
-    .map((seg) =>
-      seg.type === 'text'
-        ? seg.content
-        : `${seg.matched_text} [${scaledDisplayAmount(seg.ingredient_id)}]`
-    )
+    .map((seg) => {
+      if (seg.type === 'text') return convertedText(seg.content)
+      const info = scaledAmountInfo(seg.ingredient_id)
+      const amountStr = `${info.prefix}${info.label}${info.clipExtra ? ' ' + info.clipExtra : ''}`
+      return `${seg.matched_text} [${amountStr}]`
+    })
     .join('')
 }
 
@@ -109,8 +146,11 @@ function buildPlainText() {
   for (const sub of props.recipe.subrecipes) {
     if (sub.name) lines.push(sub.name)
     for (const ing of sub.ingredients) {
-      const amount = displayAmount(ing)
-      lines.push(amount ? `${amount} ${ing.item}` : ing.item)
+      const info = amountInfo(ing)
+      const amountStr = info.label
+        ? `${info.prefix}${info.label}${info.clipExtra ? ' ' + info.clipExtra : ''}`
+        : ''
+      lines.push(amountStr ? `${amountStr} ${ing.item}` : ing.item)
     }
     lines.push('')
   }
@@ -133,30 +173,6 @@ async function copyToClipboard() {
     setTimeout(() => { copyLabel.value = 'Copy' }, 2000)
   }
 }
-
-function formatNumber(n) {
-  if (n === null || n === undefined) return ''
-  // Round to nearest clean fraction
-  const rounded = Math.round(n * 8) / 8
-  const whole = Math.floor(rounded)
-  const frac = rounded - whole
-
-  const fractions = {
-    0.125: '⅛',
-    0.25: '¼',
-    0.375: '⅜',
-    0.5: '½',
-    0.625: '⅝',
-    0.75: '¾',
-    0.875: '⅞',
-  }
-
-  const fracStr = fractions[Math.round(frac * 1000) / 1000] || ''
-
-  if (whole === 0) return fracStr || '0'
-  if (!fracStr) return String(whole)
-  return `${whole} ${fracStr}`
-}
 </script>
 
 <style scoped>
@@ -165,7 +181,7 @@ function formatNumber(n) {
   align-items: baseline;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1rem;
   border-bottom: 1px solid #ddd;
   padding-bottom: 0.75rem;
 }
@@ -191,6 +207,55 @@ function formatNumber(n) {
   background: #f0f0f0;
   border-color: #888;
   color: #2c2c2c;
+}
+
+/* Unit toggle */
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 2rem;
+}
+
+.controls-label {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.unit-toggle {
+  display: flex;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.unit-toggle button {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #555;
+}
+
+.unit-toggle button + button {
+  border-left: 1px solid #ccc;
+}
+
+.unit-toggle button.active {
+  background: #2c2c2c;
+  color: #fff;
+}
+
+.unit-toggle button:not(.active):hover {
+  background: #f0f0f0;
+}
+
+.unit-note {
+  font-size: 0.8rem;
+  color: #aaa;
+  cursor: help;
 }
 
 section {
@@ -242,6 +307,10 @@ ul li {
   display: inline-block;
 }
 
+.amount.approx {
+  cursor: help;
+}
+
 .item {
   color: #2c2c2c;
 }
@@ -267,5 +336,9 @@ ol li {
 .inline-amount .bracket {
   color: #888;
   font-size: 0.88em;
+}
+
+.inline-amount .bracket.approx {
+  cursor: help;
 }
 </style>
