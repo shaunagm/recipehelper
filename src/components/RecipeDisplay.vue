@@ -57,20 +57,27 @@
     <!-- Directions -->
     <section class="directions">
       <h3>Directions</h3>
-      <ol>
-        <li v-for="(step, i) in recipe.directions" :key="i">
-          <span v-for="(seg, j) in step.segments" :key="j">
-            <span v-if="seg.type === 'text'">{{ convertedText(seg.content) }}</span>
-            <span v-else class="inline-amount">
-              {{ seg.matched_text }}<span
-                class="bracket"
-                :class="{ approx: scaledAmountInfo(seg.ingredient_id).prefix }"
-                :title="scaledAmountInfo(seg.ingredient_id).tooltip || undefined"
-              > [{{ scaledAmountInfo(seg.ingredient_id).prefix }}{{ scaledAmountInfo(seg.ingredient_id).label }}]</span>
+      <div
+        v-for="(section, si) in recipe.direction_sections"
+        :key="si"
+        class="direction-section"
+      >
+        <h4 v-if="section.heading" class="direction-heading">{{ section.heading }}</h4>
+        <ol :start="sectionStart(si)">
+          <li v-for="(step, i) in section.steps" :key="i">
+            <span v-for="(seg, j) in step.segments" :key="j">
+              <span v-if="seg.type === 'text'">{{ convertedText(seg.content) }}</span>
+              <span v-else class="inline-amount">
+                {{ seg.matched_text }}<span
+                  class="bracket"
+                  :class="{ approx: scaledAmountInfo(seg.ingredient_id).prefix }"
+                  :title="scaledAmountInfo(seg.ingredient_id).tooltip || undefined"
+                > [{{ scaledAmountInfo(seg.ingredient_id).prefix }}{{ scaledAmountInfo(seg.ingredient_id).label }}]</span>
+              </span>
             </span>
-          </span>
-        </li>
-      </ol>
+          </li>
+        </ol>
+      </div>
     </section>
   </div>
 </template>
@@ -126,6 +133,15 @@ function convertedText(content) {
   return convertTemperatureInText(content, unitSystem.value)
 }
 
+// Returns the 1-based starting step number for an ol in the given section index.
+function sectionStart(sectionIndex) {
+  let count = 1
+  for (let i = 0; i < sectionIndex; i++) {
+    count += props.recipe.direction_sections[i].steps.length
+  }
+  return count
+}
+
 // Build a plain-text representation of a direction step for the clipboard.
 // Includes exact values and originals in parentheses where relevant.
 function renderStep(step) {
@@ -156,9 +172,14 @@ function buildPlainText() {
   }
 
   lines.push('DIRECTIONS')
-  props.recipe.directions.forEach((step, i) => {
-    lines.push(`${i + 1}. ${renderStep(step)}`)
-  })
+  let stepNum = 1
+  for (const section of props.recipe.direction_sections) {
+    if (section.heading) lines.push(`\n${section.heading}`)
+    for (const step of section.steps) {
+      lines.push(`${stepNum}. ${renderStep(step)}`)
+      stepNum++
+    }
+  }
 
   return lines.join('\n').trim()
 }
@@ -324,6 +345,20 @@ ul li {
 }
 
 /* Directions */
+.direction-section {
+  margin-bottom: 1.5rem;
+}
+
+.direction-heading {
+  font-size: 0.95rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #444;
+  margin-bottom: 0.5rem;
+  margin-top: 1.5rem;
+}
+
 ol {
   padding-left: 1.4rem;
 }

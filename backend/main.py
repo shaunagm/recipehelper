@@ -40,6 +40,120 @@ class ParseJsonLdRequest(BaseModel):
     jsonld: Any  # accepts a JSON string or a pre-parsed object/array
 
 
+_IMPERATIVE_COOKING_VERBS = frozenset({
+    "add", "bake", "beat", "blend", "boil", "bring", "brush",
+    "chill", "chop", "coat", "combine", "cook", "cool", "cover", "cream",
+    "cut", "dice", "dissolve", "divide", "drain", "drizzle", "drop",
+    "fill", "fold", "freeze", "fry", "garnish", "grease",
+    "heat", "knead", "layer", "let", "line", "melt", "mix", "place",
+    "pour", "preheat", "prepare", "press", "proof", "put", "refrigerate",
+    "remove", "repeat", "rest", "roll", "roast", "saute", "sauté", "season",
+    "serve", "set", "shape", "sift", "slice", "spread", "sprinkle", "stir",
+    "store", "strain", "taste", "top", "transfer", "trim", "turn",
+    "wash", "whisk",
+})
+
+
+def is_heading(text: str) -> bool:
+    """Return True if a direction step looks like a section heading rather than an instruction."""
+    text = text.strip()
+    if not text:
+        return False
+    # Rule 1: ends with colon and is short — e.g. "For the filling:"
+    if text.endswith(":") and len(text) <= 80 and len(text.split()) <= 8:
+        return True
+    # Rule 2: short title-like phrase — no sentence-ending punctuation, no digits,
+    # and doesn't open with an imperative cooking verb.
+    # e.g. "Making the Chocolate Fudge Cake" or "Chocolate Ganache"
+    words = text.split()
+    if (1 <= len(words) <= 5
+            and text[-1] not in ".!?:"
+            and not any(c.isdigit() for c in text)
+            and words[0].lower() not in _IMPERATIVE_COOKING_VERBS):
+        return True
+    return False
+
+
+def flat_list_to_sections(steps: list) -> list:
+    """
+    Split a flat list of step strings into sections using heuristic heading detection.
+    Returns: [{"heading": str, "steps": [str]}]
+    """
+    sections = [{"heading": "", "steps": []}]
+    for step in steps:
+        if is_heading(step):
+            sections.append({"heading": step.rstrip(":").strip(), "steps": []})
+        else:
+            sections[-1]["steps"].append(step)
+    return [s for s in sections if s["steps"]]
+
+
+def parse_instructions_to_sections(instructions) -> list:
+    """
+    Parse JSON-LD recipeInstructions into sections, preserving HowToSection structure
+    when present. Falls back to flat_list_to_sections for unstructured lists.
+    Returns: [{"heading": str, "steps": [str]}]
+    """
+    if isinstance(instructions, str):
+        steps = [s.strip() for s in instructions.split("\n") if s.strip()]
+        return flat_list_to_sections(steps)
+
+    if not isinstance(instructions, list):
+        return [{"heading": "", "steps": []}]
+
+    has_sections = any(
+        isinstance(item, dict) and "HowToSection" in str(item.get("@type", ""))
+        for item in instructions
+    )
+
+    if has_sections:
+        sections = [{"heading": "", "steps": []}]
+        for item in instructions:
+            if isinstance(item, str):
+                sections[-1]["steps"].append(item.strip())
+            elif isinstance(item, dict):
+                if "HowToSection" in str(item.get("@type", "")):
+                    heading = str(item.get("name", "")).strip()
+                    sub_steps = []
+                    for sub in (item.get("itemListElement") or []):
+                        if isinstance(sub, str):
+                            sub_steps.append(sub.strip())
+                        elif isinstance(sub, dict) and sub.get("text"):
+                            sub_steps.append(str(sub["text"]).strip())
+                    if sub_steps:
+                        sections.append({"heading": heading, "steps": sub_steps})
+                elif item.get("text"):
+                    sections[-1]["steps"].append(str(item["text"]).strip())
+        return [s for s in sections if s["steps"]]
+
+    # Flat list — extract text then apply heuristic
+    steps = []
+    for item in instructions:
+        if isinstance(item, str):
+            steps.append(item.strip())
+        elif isinstance(item, dict):
+            if item.get("text"):
+                steps.append(str(item["text"]).strip())
+            if item.get("itemListElement"):
+                for sub in item["itemListElement"]:
+                    if isinstance(sub, str):
+                        steps.append(sub.strip())
+                    elif isinstance(sub, dict) and sub.get("text"):
+                        steps.append(str(sub["text"]).strip())
+    return flat_list_to_sections([s for s in steps if s])
+
+
+def annotate_sections(instruction_sections: list, all_ingredients: list) -> list:
+    """Annotate each section's steps and return direction_sections."""
+    result = []
+    for section in instruction_sections:
+        result.append({
+            "heading": section["heading"],
+            "steps": annotate_directions(section["steps"], all_ingredients),
+        })
+    return result
+
+
 def build_recipe_response(scraper) -> dict:
     """Shared logic: extract + parse a recipe from a recipe-scrapers scraper object."""
     try:
@@ -73,17 +187,31 @@ def build_recipe_response(scraper) -> dict:
         all_ingredients = [parse_ingredient(raw, i) for i, raw in enumerate(raw_ingredients)]
         subrecipes = [{"name": "", "ingredients": all_ingredients}]
 
+    # Prefer raw JSON-LD schema to preserve HowToSection structure.
+    # schema.data is a property in some versions and a method in others.
+    instruction_sections = None
     try:
-        raw_directions = scraper.instructions_list()
+        d = scraper.schema.data
+        schema_data = d() if callable(d) else d
+        raw_instructions = schema_data.get("recipeInstructions") if isinstance(schema_data, dict) else None
+        if raw_instructions:
+            instruction_sections = parse_instructions_to_sections(raw_instructions)
     except Exception:
+        pass
+
+    if not instruction_sections:
         try:
-            raw_directions = [scraper.instructions()]
+            raw_steps = scraper.instructions_list()
         except Exception:
-            raw_directions = []
+            try:
+                raw_steps = [scraper.instructions()]
+            except Exception:
+                raw_steps = []
+        instruction_sections = flat_list_to_sections(raw_steps)
 
-    directions = annotate_directions(raw_directions, all_ingredients)
+    direction_sections = annotate_sections(instruction_sections, all_ingredients)
 
-    return {"title": title, "subrecipes": subrecipes, "directions": directions}
+    return {"title": title, "subrecipes": subrecipes, "direction_sections": direction_sections}
 
 
 @app.post("/api/scrape")
@@ -142,22 +270,6 @@ def find_recipe_object(data):
     return None
 
 
-def flatten_instructions(instructions):
-    """Normalize recipeInstructions into a flat list of strings."""
-    if isinstance(instructions, str):
-        return [s.strip() for s in instructions.split("\n") if s.strip()]
-    steps = []
-    for item in instructions if isinstance(instructions, list) else []:
-        if isinstance(item, str):
-            steps.append(item.strip())
-        elif isinstance(item, dict):
-            if item.get("text"):
-                steps.append(str(item["text"]).strip())
-            if item.get("itemListElement"):
-                steps.extend(flatten_instructions(item["itemListElement"]))
-    return [s for s in steps if s]
-
-
 @app.post("/api/parse-jsonld")
 @limiter.limit("10/minute")
 async def parse_jsonld(request: Request, req: ParseJsonLdRequest):
@@ -180,10 +292,10 @@ async def parse_jsonld(request: Request, req: ParseJsonLdRequest):
     if isinstance(raw_ingredients, str):
         raw_ingredients = [raw_ingredients]
 
-    raw_directions = flatten_instructions(recipe.get("recipeInstructions", []))
-
     all_ingredients = [parse_ingredient(raw, i) for i, raw in enumerate(raw_ingredients)]
     subrecipes = [{"name": "", "ingredients": all_ingredients}]
-    directions = annotate_directions(raw_directions, all_ingredients)
 
-    return {"title": title, "subrecipes": subrecipes, "directions": directions}
+    instruction_sections = parse_instructions_to_sections(recipe.get("recipeInstructions", []))
+    direction_sections = annotate_sections(instruction_sections, all_ingredients)
+
+    return {"title": title, "subrecipes": subrecipes, "direction_sections": direction_sections}

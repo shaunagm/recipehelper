@@ -21,12 +21,19 @@ def build_pattern(item: str) -> re.Pattern | None:
         "half", "whole", "large", "small", "medium",
     }
 
+    # Words too generic to use as a last-word seed — common kitchen tool/vessel
+    # terms that appear in directions regardless of any specific ingredient.
+    _GENERIC_LAST_WORDS = {
+        "sheet", "pan", "dish", "bowl", "pot", "rack", "tray", "tin",
+        "skillet", "mold", "mould", "foil", "paper",
+    }
+
     # Seed with full item; for multi-word items also try first and last word
     # so "vanilla extract" matches "vanilla" and "all-purpose flour" matches "flour"
     words = item.split()
     seeds = {item}
     if len(words) > 1:
-        if len(words[-1]) >= 2:
+        if len(words[-1]) >= 2 and words[-1] not in _GENERIC_LAST_WORDS:
             seeds.add(words[-1])
         if len(words[0]) >= 3 and words[0] not in _GENERIC_FIRST_WORDS:
             seeds.add(words[0])

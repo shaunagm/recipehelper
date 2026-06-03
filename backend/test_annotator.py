@@ -191,6 +191,21 @@ class TestAnnotateDirections:
         assert len(refs) == 1
         assert refs[0]["ingredient_id"] == "1"  # brown sugar, not plain sugar
 
+    def test_generic_last_word_not_used_as_seed(self):
+        # "gelatin sheet" has last word "sheet", which is a generic kitchen term.
+        # It should NOT match the word "sheet" in "sheet pan".
+        ingredients = [make_ingredient(0, "gelatin sheet")]
+        directions = ["Prepare a quarter-sheet pan with parchment."]
+        result = annotate_directions(directions, ingredients)
+        assert len(ref_segments(result[0])) == 0
+
+    def test_generic_last_word_pan_not_used_as_seed(self):
+        # "cake pan" has last word "pan" — should not match "pan" in directions.
+        ingredients = [make_ingredient(0, "cake pan")]
+        directions = ["Pour batter into the prepared pan."]
+        result = annotate_directions(directions, ingredients)
+        assert len(ref_segments(result[0])) == 0
+
     def test_segments_reconstruct_original_text(self):
         ingredients = [make_ingredient(0, "flour")]
         directions = ["Sift the flour carefully."]

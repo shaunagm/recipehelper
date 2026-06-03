@@ -16,14 +16,19 @@ const imperialRecipe = {
       ],
     },
   ],
-  directions: [
+  direction_sections: [
     {
-      segments: [
-        { type: 'text',       content: 'Preheat oven to 350°F. Mix ' },
-        { type: 'ingredient', ingredient_id: '0', matched_text: 'butter' },
-        { type: 'text',       content: ' with ' },
-        { type: 'ingredient', ingredient_id: '1', matched_text: 'salt' },
-        { type: 'text',       content: '.' },
+      heading: '',
+      steps: [
+        {
+          segments: [
+            { type: 'text',       content: 'Preheat oven to 350°F. Mix ' },
+            { type: 'ingredient', ingredient_id: '0', matched_text: 'butter' },
+            { type: 'text',       content: ' with ' },
+            { type: 'ingredient', ingredient_id: '1', matched_text: 'salt' },
+            { type: 'text',       content: '.' },
+          ],
+        },
       ],
     },
   ],
@@ -40,10 +45,11 @@ const metricRecipe = {
       ],
     },
   ],
-  directions: [
+  direction_sections: [
     {
-      segments: [
-        { type: 'text', content: 'Bake at 220°C until done.' },
+      heading: '',
+      steps: [
+        { segments: [{ type: 'text', content: 'Bake at 220°C until done.' }] },
       ],
     },
   ],
@@ -65,7 +71,35 @@ const subrecipeRecipe = {
       ],
     },
   ],
-  directions: [],
+  direction_sections: [],
+}
+
+const multisectionRecipe = {
+  title: 'Cinnamon Rolls',
+  subrecipes: [
+    {
+      name: '',
+      ingredients: [
+        { id: '0', original: '2 cups flour', amount: 2, unit: 'cup', item: 'flour' },
+        { id: '1', original: '1 cup sugar',  amount: 1, unit: 'cup', item: 'sugar' },
+      ],
+    },
+  ],
+  direction_sections: [
+    {
+      heading: 'Make the dough',
+      steps: [
+        { segments: [{ type: 'text', content: 'Mix the flour together.' }] },
+        { segments: [{ type: 'text', content: 'Knead for 10 minutes.' }] },
+      ],
+    },
+    {
+      heading: 'Make the filling',
+      steps: [
+        { segments: [{ type: 'text', content: 'Combine sugar and cinnamon.' }] },
+      ],
+    },
+  ],
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -202,6 +236,28 @@ describe('RecipeDisplay', () => {
     })
   })
 
+  describe('direction sections', () => {
+    test('renders section headings as h4', () => {
+      const w = mountRecipe(multisectionRecipe)
+      const headings = w.findAll('.direction-heading').map((el) => el.text())
+      expect(headings).toContain('Make the dough')
+      expect(headings).toContain('Make the filling')
+    })
+
+    test('no heading element when heading is empty', () => {
+      const w = mountRecipe(imperialRecipe)
+      expect(w.findAll('.direction-heading')).toHaveLength(0)
+    })
+
+    test('step numbers continue across sections', () => {
+      const w = mountRecipe(multisectionRecipe)
+      const lists = w.findAll('ol')
+      // First section starts at 1 (default, no start attribute needed)
+      // Second section should start at 3 (after 2 steps in first section)
+      expect(lists[1].attributes('start')).toBe('3')
+    })
+  })
+
   describe('scaling', () => {
     test('scale factor adjusts all amounts proportionally', async () => {
       const w = mountRecipe(imperialRecipe)
@@ -280,6 +336,14 @@ describe('RecipeDisplay', () => {
       const text = navigator.clipboard.writeText.mock.calls[0][0]
       expect(text).toContain('175°C')
       expect(text).toContain('original: 350°F')
+    })
+
+    test('clipboard text includes section headings', async () => {
+      const w = mountRecipe(multisectionRecipe)
+      await w.find('.copy-btn').trigger('click')
+      const text = navigator.clipboard.writeText.mock.calls[0][0]
+      expect(text).toContain('Make the dough')
+      expect(text).toContain('Make the filling')
     })
 
     test('copy button label changes to Copied! then resets', async () => {
