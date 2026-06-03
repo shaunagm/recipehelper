@@ -6,6 +6,11 @@ A personal tool that takes a recipe URL and reformats it to just ingredients and
 - Ingredient amounts are annotated inline in the directions (e.g. "add the eggs [2 eggs]")
 - Sliders on each ingredient let you scale the entire recipe proportionally
 
+> [!NOTE]
+> This is a toy/experimental project. You're welcome to fork the repo or make suggestions in the issue
+> tracker but I am not maintaining it as an open source project and will be entirely self-centered in 
+> any changes I make.
+
 ## Stack
 
 - **Frontend:** Vue 3 + Vite
