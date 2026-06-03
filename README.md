@@ -46,6 +46,16 @@ cd backend
 pytest -v
 ```
 
+### 4. Run frontend tests
+
+From the project root:
+
+```bash
+npm test
+```
+
+This runs the Vitest suite, which covers the unit conversion logic (`src/unitConverter.test.js`) and the `RecipeDisplay` component (`src/components/RecipeDisplay.test.js`).
+
 ## Deployment
 
 ### Backend

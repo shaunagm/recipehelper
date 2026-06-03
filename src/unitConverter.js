@@ -122,7 +122,9 @@ export function convertIngredient(amount, rawUnit, targetSystem) {
     const exactMl = amount * info.toMl
     if (targetSystem === 'metric') {
       const { val, unit } = roundMl(exactMl)
-      displayVal = val; displayUnit = unit; exactVal = exactMl
+      displayVal = val; displayUnit = unit
+      // exactVal must be in the same unit as displayVal for isApprox comparison
+      exactVal = unit === 'L' ? exactMl / 1000 : exactMl
     } else {
       const { val, unit } = mlToImperial(exactMl)
       displayVal = Math.round(val * 8) / 8  // nearest 1/8 for imperial fractions
@@ -132,7 +134,8 @@ export function convertIngredient(amount, rawUnit, targetSystem) {
     const exactG = amount * info.toG
     if (targetSystem === 'metric') {
       const { val, unit } = roundG(exactG)
-      displayVal = val; displayUnit = unit; exactVal = exactG
+      displayVal = val; displayUnit = unit
+      exactVal = unit === 'kg' ? exactG / 1000 : exactG
     } else {
       const { val, unit } = gToImperial(exactG)
       displayVal = Math.round(val * 8) / 8
