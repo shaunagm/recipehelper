@@ -109,7 +109,7 @@ async def scrape(request: Request, req: ScrapeRequest):
         raise HTTPException(status_code=502, detail=f"Could not reach {req.url}: {e}")
 
     try:
-        scraper = scrape_html(response.text, org_url=req.url)
+        scraper = scrape_html(response.text, org_url=req.url, wild_mode=True)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Could not parse recipe: {e}")
 
