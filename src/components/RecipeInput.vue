@@ -16,6 +16,34 @@
       <p v-if="error && !blocked" class="error">{{ error }}</p>
     </form>
 
+    <!-- Fallback shown when the site has no standard recipe markup -->
+    <div v-if="noSchema" class="fallback">
+      <p class="error">
+        This site doesn't use standard recipe markup, so it can't be parsed automatically.
+      </p>
+      <div class="bookmarklet-section">
+        <p class="label">Try pasting the JSON-LD manually</p>
+        <p class="hint">
+          Open the recipe page, view its source (Ctrl+U or right-click → View Page Source),
+          and search for <code>application/ld+json</code>. If you find a block with
+          <code>"@type": "Recipe"</code>, paste it below.
+        </p>
+        <textarea
+          v-model="jsonldPaste"
+          class="jsonld-textarea"
+          placeholder='{"@context": "https://schema.org", "@type": "Recipe", ...}'
+        />
+        <button
+          class="parse-btn"
+          :disabled="!jsonldPaste.trim() || parsing"
+          @click="parseJsonLd"
+        >
+          {{ parsing ? 'Parsing…' : 'Parse JSON-LD' }}
+        </button>
+        <p v-if="parseError" class="error">{{ parseError }}</p>
+      </div>
+    </div>
+
     <!-- Fallback shown when the site blocks our server -->
     <div v-if="blocked" class="fallback">
       <p class="error">
@@ -80,6 +108,7 @@ const url = ref('')
 const loading = ref(false)
 const error = ref('')
 const blocked = ref(false)
+const noSchema = ref(false)
 
 const jsonldPaste = ref('')
 const parsing = ref(false)
@@ -94,6 +123,7 @@ const bookmarkletHref = computed(() => bookmarkletCode)
 async function submit() {
   error.value = ''
   blocked.value = false
+  noSchema.value = false
   loading.value = true
   try {
     const recipe = await fetchRecipe(url.value)
@@ -102,6 +132,8 @@ async function submit() {
     error.value = e.message
     if (e.status === 502 || e.status === 403) {
       blocked.value = true
+    } else if (e.status === 422 && e.message.includes('standard recipe markup')) {
+      noSchema.value = true
     }
   } finally {
     loading.value = false
@@ -121,6 +153,7 @@ async function parseJsonLd() {
     const recipe = await parseFromJsonLd(data)
     emit('recipe-loaded', recipe)
     blocked.value = false
+    noSchema.value = false
   } catch (e) {
     parseError.value = e.message
   } finally {

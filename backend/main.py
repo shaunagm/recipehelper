@@ -111,6 +111,12 @@ async def scrape(request: Request, req: ScrapeRequest):
     try:
         scraper = scrape_html(response.text, org_url=req.url, wild_mode=True)
     except Exception as e:
+        msg = str(e)
+        if "No Recipe Schema" in msg or "SchemaOrg" in msg or "schema" in msg.lower():
+            raise HTTPException(
+                status_code=422,
+                detail="No recipe data found on this page. The site may not use standard recipe markup (schema.org/Recipe).",
+            )
         raise HTTPException(status_code=422, detail=f"Could not parse recipe: {e}")
 
     return build_recipe_response(scraper)
