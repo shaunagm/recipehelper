@@ -25,8 +25,10 @@
         <p class="label">Try pasting the JSON-LD manually</p>
         <p class="hint">
           Open the recipe page, view its source (Ctrl+U or right-click → View Page Source),
-          and search for <code>application/ld+json</code>. If you find a block with
-          <code>"@type": "Recipe"</code>, paste it below.
+          and search for <code>application/ld+json</code>. If you find a block containing
+          <code>"@type": "Recipe"</code>, paste it below. If no such block exists, this site
+          stores its recipe data in a format this tool can't read — you won't be able to use
+          this app for that recipe.
         </p>
         <textarea
           v-model="jsonldPaste"
