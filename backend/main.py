@@ -1,19 +1,32 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Any
 import json
+import os
 import httpx
 from recipe_scrapers import scrape_html
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from ingredient_parser import parse_ingredient
 from annotator import annotate_directions
 
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# In production, set ALLOWED_ORIGINS to your GitHub Pages URL, e.g.:
+# https://yourusername.github.io
+# In development, leave unset to allow all origins.
+_raw = os.getenv("ALLOWED_ORIGINS", "*")
+allowed_origins = ["*"] if _raw == "*" else [o.strip() for o in _raw.split(",")]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_methods=["POST"],
     allow_headers=["*"],
 )
@@ -74,7 +87,8 @@ def build_recipe_response(scraper) -> dict:
 
 
 @app.post("/api/scrape")
-async def scrape(req: ScrapeRequest):
+@limiter.limit("10/minute")
+async def scrape(request: Request, req: ScrapeRequest):
     try:
         async with httpx.AsyncClient(
             follow_redirects=True,
@@ -139,7 +153,8 @@ def flatten_instructions(instructions):
 
 
 @app.post("/api/parse-jsonld")
-async def parse_jsonld(req: ParseJsonLdRequest):
+@limiter.limit("10/minute")
+async def parse_jsonld(request: Request, req: ParseJsonLdRequest):
     # Accept either a raw JSON string or a pre-parsed object/array
     if isinstance(req.jsonld, str):
         try:
