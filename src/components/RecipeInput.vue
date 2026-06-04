@@ -13,50 +13,28 @@
           {{ loading ? 'Fetching…' : 'Get Recipe' }}
         </button>
       </div>
-      <p v-if="error && !blocked" class="error">{{ error }}</p>
+      <p v-if="error && !blocked && !noSchema" class="error">{{ error }}</p>
     </form>
 
-    <!-- Fallback shown when the site has no standard recipe markup -->
-    <div v-if="noSchema" class="fallback">
-      <p class="error">
-        This site doesn't use standard recipe markup, so it can't be parsed automatically.
-      </p>
-      <div class="bookmarklet-section">
-        <p class="label">Try pasting the JSON-LD manually</p>
-        <p class="hint">
-          Open the recipe page, view its source (Ctrl+U or right-click → View Page Source),
-          and search for <code>application/ld+json</code>. If you find a block containing
-          <code>"@type": "Recipe"</code>, paste it below. If no such block exists, this site
-          stores its recipe data in a format this tool can't read — you won't be able to use
-          this app for that recipe.
-        </p>
-        <textarea
-          v-model="jsonldPaste"
-          class="jsonld-textarea"
-          placeholder='{"@context": "https://schema.org", "@type": "Recipe", ...}'
-        />
-        <button
-          class="parse-btn"
-          :disabled="!jsonldPaste.trim() || parsing"
-          @click="parseJsonLd"
-        >
-          {{ parsing ? 'Parsing…' : 'Parse JSON-LD' }}
-        </button>
-        <p v-if="parseError" class="error">{{ parseError }}</p>
-      </div>
-    </div>
+    <!-- Context-specific error messages -->
+    <p v-if="blocked" class="error">
+      This site blocked the request. Use the bookmarklet below to load the recipe instead.
+    </p>
+    <p v-if="noSchema" class="error">
+      This site doesn't use standard recipe markup, so it can't be parsed automatically.
+      Try pasting the JSON-LD below. If you can't find a block, the page doesn't have data
+      in a format this tool can read and you won't be able to use this app for that recipe.
+    </p>
 
-    <!-- Fallback shown when the site blocks our server -->
-    <div v-if="blocked" class="fallback">
-      <p class="error">
-        This site blocked the request. Use the bookmarklet to load the recipe instead.
-      </p>
+    <!-- Always-visible alternative input methods -->
+    <div class="alt-section">
+      <div class="alt-header">Alternative input methods</div>
 
       <div class="bookmarklet-section">
-        <p class="label">Step 1 — Install the bookmarklet (one time only)</p>
+        <p class="label">Bookmarklet — install once, use on any site</p>
         <p class="hint">
-          Drag this link to your bookmarks bar, or on mobile: bookmark any page,
-          then edit that bookmark's URL and replace it with the code below.
+          Drag this link to your bookmarks bar. On mobile: bookmark any page, then edit that
+          bookmark and replace its URL with the code shown below.
         </p>
         <a :href="bookmarkletHref" class="bookmarklet-link" @click.prevent>
           📖 Get Recipe
@@ -65,22 +43,19 @@
           <summary>Show bookmarklet code</summary>
           <textarea class="code-box" readonly :value="bookmarkletCode" />
         </details>
-      </div>
-
-      <div class="bookmarklet-section">
-        <p class="label">Step 2 — Use it</p>
-        <p class="hint">
-          Go to the recipe page in your browser, then tap the
-          <strong>📖 Get Recipe</strong> bookmark. It will extract the recipe
-          data and bring you straight back here.
+        <p class="hint" style="margin-top: 0.6rem;">
+          Once installed, navigate to a recipe page and tap the
+          <strong>📖 Get Recipe</strong> bookmark — it will bring you straight back here with
+          the recipe loaded.
         </p>
       </div>
 
       <div class="bookmarklet-section">
-        <p class="label">Or paste the JSON-LD manually</p>
+        <p class="label">Paste JSON-LD manually</p>
         <p class="hint">
-          View the page source, search for <code>application/ld+json</code>,
-          and paste the JSON between the script tags below.
+          Open the recipe page, view its source (Ctrl+U or right-click → View Page Source),
+          and search for <code>application/ld+json</code>. If you find a block containing
+          <code>"@type": "Recipe"</code>, paste it below.
         </p>
         <textarea
           v-model="jsonldPaste"
@@ -217,11 +192,20 @@ button:disabled {
   font-size: 0.9rem;
 }
 
-/* Fallback UI */
-.fallback {
-  margin-top: 1.25rem;
+/* Alternative input methods */
+.alt-section {
+  margin-top: 1.5rem;
   border-top: 1px solid #ddd;
   padding-top: 1.25rem;
+}
+
+.alt-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #888;
+  margin-bottom: 1rem;
 }
 
 .bookmarklet-section {
