@@ -1,7 +1,7 @@
 <template>
   <div id="app">
     <h1>Recipe Helper</h1>
-    <RecipeInput @recipe-loaded="onRecipeLoaded" />
+    <RecipeInput :collapsed="!!recipe" @recipe-loaded="onRecipeLoaded" />
     <p v-if="hashError" class="hash-error">{{ hashError }}</p>
     <RecipeDisplay v-if="recipe" :recipe="recipe" />
   </div>

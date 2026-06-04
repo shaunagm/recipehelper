@@ -1,40 +1,58 @@
 <template>
   <div class="input-section">
-    <form @submit.prevent="submit">
-      <div class="input-row">
-        <input
-          v-model="url"
-          type="url"
-          placeholder="Paste a recipe URL…"
-          :disabled="loading"
-          required
-        />
-        <button type="submit" :disabled="loading || !url">
-          {{ loading ? 'Fetching…' : 'Get Recipe' }}
+    <!-- Collapsed bar shown after a recipe loads -->
+    <div v-if="collapsed && !expanded" class="collapsed-bar">
+      <span class="collapsed-label">Recipe Helper</span>
+      <button class="ghost-btn" @click="expanded = true">Change recipe</button>
+    </div>
+
+    <!-- Full input panel -->
+    <div v-else>
+      <div class="tab-bar">
+        <button
+          v-for="tab in tabs"
+          :key="tab.id"
+          class="tab-btn"
+          :class="{ active: activeTab === tab.id }"
+          @click="activeTab = tab.id"
+        >
+          {{ tab.label }}
+        </button>
+        <button v-if="collapsed" class="ghost-btn collapse-btn" @click="expanded = false">
+          ✕ Close
         </button>
       </div>
-      <p v-if="error && !blocked && !noSchema" class="error">{{ error }}</p>
-    </form>
 
-    <!-- Context-specific error messages -->
-    <p v-if="blocked" class="error">
-      This site blocked the request. Use the bookmarklet below to load the recipe instead.
-    </p>
-    <p v-if="noSchema" class="error">
-      This site doesn't use standard recipe markup, so it can't be parsed automatically.
-      Try pasting the JSON-LD below. If you can't find a block, the page doesn't have data
-      in a format this tool can read and you won't be able to use this app for that recipe.
-    </p>
+      <!-- Tab: URL -->
+      <div v-if="activeTab === 'url'" class="tab-panel">
+        <form @submit.prevent="submit">
+          <div class="input-row">
+            <input
+              v-model="url"
+              type="url"
+              placeholder="Paste a recipe URL…"
+              :disabled="loading"
+              required
+            />
+            <button type="submit" :disabled="loading || !url">
+              {{ loading ? 'Fetching…' : 'Get Recipe' }}
+            </button>
+          </div>
+        </form>
+        <p v-if="blocked" class="error">
+          This site blocked the request. Try the <a href="#" @click.prevent="activeTab = 'bookmarklet'">Bookmarklet</a> or <a href="#" @click.prevent="activeTab = 'jsonld'">Paste JSON-LD</a> tab instead.
+        </p>
+        <p v-else-if="noSchema" class="error">
+          This site doesn't use standard recipe markup. Try the <a href="#" @click.prevent="activeTab = 'jsonld'">Paste JSON-LD</a> tab. If you can't find a JSON-LD block in the page source, this app can't read that recipe.
+        </p>
+        <p v-else-if="error" class="error">{{ error }}</p>
+      </div>
 
-    <!-- Always-visible alternative input methods -->
-    <div class="alt-section">
-      <div class="alt-header">Alternative input methods</div>
-
-      <div class="bookmarklet-section">
-        <p class="label">Bookmarklet — install once, use on any site</p>
+      <!-- Tab: Bookmarklet -->
+      <div v-if="activeTab === 'bookmarklet'" class="tab-panel">
         <p class="hint">
           Drag this link to your bookmarks bar. On mobile: bookmark any page, then edit that
-          bookmark and replace its URL with the code shown below.
+          bookmark and replace its URL with the code below.
         </p>
         <a :href="bookmarkletHref" class="bookmarklet-link" @click.prevent>
           📖 Get Recipe
@@ -43,19 +61,19 @@
           <summary>Show bookmarklet code</summary>
           <textarea class="code-box" readonly :value="bookmarkletCode" />
         </details>
-        <p class="hint" style="margin-top: 0.6rem;">
-          Once installed, navigate to a recipe page and tap the
-          <strong>📖 Get Recipe</strong> bookmark — it will bring you straight back here with
-          the recipe loaded.
+        <p class="hint" style="margin-top: 0.75rem;">
+          Once installed, navigate to a recipe page and tap <strong>📖 Get Recipe</strong> — it
+          will bring you straight back here with the recipe loaded.
         </p>
       </div>
 
-      <div class="bookmarklet-section">
-        <p class="label">Paste JSON-LD manually</p>
+      <!-- Tab: Paste JSON-LD -->
+      <div v-if="activeTab === 'jsonld'" class="tab-panel">
         <p class="hint">
           Open the recipe page, view its source (Ctrl+U or right-click → View Page Source),
           and search for <code>application/ld+json</code>. If you find a block containing
-          <code>"@type": "Recipe"</code>, paste it below.
+          <code>"@type": "Recipe"</code>, paste it below. If no such block exists, the page
+          can't be used with this app.
         </p>
         <textarea
           v-model="jsonldPaste"
@@ -76,10 +94,21 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, watch } from 'vue'
 import { fetchRecipe, parseFromJsonLd } from '../recipeFetcher.js'
 
+const props = defineProps({
+  collapsed: { type: Boolean, default: false },
+})
 const emit = defineEmits(['recipe-loaded'])
+
+const tabs = [
+  { id: 'url', label: 'URL' },
+  { id: 'bookmarklet', label: 'Bookmarklet' },
+  { id: 'jsonld', label: 'Paste JSON-LD' },
+]
+const activeTab = ref('url')
+const expanded = ref(false)
 
 const url = ref('')
 const loading = ref(false)
@@ -94,8 +123,11 @@ const parseError = ref('')
 const APP_URL = window.location.origin + window.location.pathname
 
 const bookmarkletCode = `javascript:(function(){var s=document.querySelectorAll('script[type="application/ld+json"]');var j=Array.from(s).map(function(x){return x.textContent}).join('\\n');if(!j){alert('No recipe data found on this page.');}else{location.href='${APP_URL}#ld='+encodeURIComponent(j);}})();`
+const bookmarkletHref = bookmarkletCode
 
-const bookmarkletHref = computed(() => bookmarkletCode)
+// When a blocking error occurs, nudge the user to the relevant tab
+watch(blocked, (val) => { if (val) activeTab.value = 'bookmarklet' })
+watch(noSchema, (val) => { if (val) activeTab.value = 'jsonld' })
 
 async function submit() {
   error.value = ''
@@ -105,6 +137,7 @@ async function submit() {
   try {
     const recipe = await fetchRecipe(url.value)
     emit('recipe-loaded', recipe)
+    expanded.value = false
   } catch (e) {
     error.value = e.message
     if (e.status === 502 || e.status === 403) {
@@ -131,6 +164,7 @@ async function parseJsonLd() {
     emit('recipe-loaded', recipe)
     blocked.value = false
     noSchema.value = false
+    expanded.value = false
   } catch (e) {
     parseError.value = e.message
   } finally {
@@ -141,9 +175,69 @@ async function parseJsonLd() {
 
 <style scoped>
 .input-section {
-  margin-bottom: 2.5rem;
+  margin-bottom: 2rem;
 }
 
+/* Collapsed bar */
+.collapsed-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 1.5rem;
+}
+
+.collapsed-label {
+  font-size: 0.9rem;
+  color: #888;
+}
+
+/* Tabs */
+.tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-bottom: 2px solid #ddd;
+  margin-bottom: 1rem;
+}
+
+.tab-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: none;
+  color: #666;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  border-radius: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tab-btn:hover:not(:disabled) {
+  background: #f5f5f5;
+  color: #2c2c2c;
+}
+
+.tab-btn.active {
+  color: #2c2c2c;
+  border-bottom-color: #2c2c2c;
+  font-weight: 600;
+}
+
+.collapse-btn {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: #999;
+}
+
+.tab-panel {
+  padding: 0.5rem 0 0.75rem;
+}
+
+/* URL tab */
 .input-row {
   display: flex;
   gap: 0.5rem;
@@ -186,45 +280,32 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.ghost-btn {
+  background: none;
+  color: #777;
+  border: 1px solid #ccc;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.85rem;
+  border-radius: 4px;
+}
+
+.ghost-btn:hover:not(:disabled) {
+  background: #f5f5f5;
+  color: #2c2c2c;
+}
+
 .error {
-  margin-top: 0.5rem;
+  margin-top: 0.6rem;
   color: #c0392b;
   font-size: 0.9rem;
 }
 
-/* Alternative input methods */
-.alt-section {
-  margin-top: 1.5rem;
-  border-top: 1px solid #ddd;
-  padding-top: 1.25rem;
-}
-
-.alt-header {
-  font-size: 0.8rem;
+.error a {
+  color: #c0392b;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #888;
-  margin-bottom: 1rem;
 }
 
-.bookmarklet-section {
-  margin-bottom: 1.5rem;
-}
-
-.label {
-  font-weight: bold;
-  font-size: 0.95rem;
-  margin-bottom: 0.3rem;
-}
-
-.hint {
-  font-size: 0.88rem;
-  color: #555;
-  margin-bottom: 0.6rem;
-  line-height: 1.5;
-}
-
+/* Bookmarklet tab */
 .bookmarklet-link {
   display: inline-block;
   padding: 0.5rem 1rem;
@@ -235,6 +316,7 @@ button:disabled {
   color: #2c2c2c;
   font-size: 0.95rem;
   cursor: grab;
+  margin-bottom: 0.4rem;
 }
 
 .bookmarklet-link:hover {
@@ -242,7 +324,7 @@ button:disabled {
 }
 
 .code-details {
-  margin-top: 0.6rem;
+  margin-top: 0.4rem;
   font-size: 0.85rem;
 }
 
@@ -266,6 +348,7 @@ button:disabled {
   color: #444;
 }
 
+/* JSON-LD tab */
 .jsonld-textarea {
   display: block;
   width: 100%;
@@ -283,6 +366,13 @@ button:disabled {
 
 .parse-btn {
   margin-top: 0;
+}
+
+.hint {
+  font-size: 0.88rem;
+  color: #555;
+  margin-bottom: 0.6rem;
+  line-height: 1.5;
 }
 
 code {
