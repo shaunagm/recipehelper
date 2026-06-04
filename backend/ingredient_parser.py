@@ -1,5 +1,20 @@
 import re
 
+# Matches a leading number in the *original* text (including unicode fraction characters).
+_ORIG_NUM_RE = re.compile(
+    r'^(?:'
+    r'\d+\s+and\s+\d+/\d+'   # "2 and 3/4"
+    r'|\d+\s+\d+/\d+'         # "1 1/2"
+    r'|\d+/\d+'                # "1/2"
+    r'|\d+\.?\d*'              # "2", "2.5"
+    r'|[\u00bc\u00bd\u00be\u2153\u2154\u2155\u2156\u2157\u2158\u2159\u215a'
+    r'\u2150\u215b\u215c\u215d\u215e]'  # lone unicode fraction
+    r'|\d+\s*[\u00bc\u00bd\u00be\u2153\u2154\u2155\u2156\u2157\u2158'
+    r'\u2159\u215a\u2150\u215b\u215c\u215d\u215e]'  # digit + unicode fraction "1½"
+    r')\s*',
+    re.IGNORECASE | re.UNICODE,
+)
+
 UNITS = {
     # volume
     "cup", "cups", "c",
@@ -117,6 +132,30 @@ def fraction_to_float(s: str) -> float:
     return float(s)
 
 
+def compute_original_tail(raw: str, unit: str) -> str:
+    """
+    Return the portion of the original ingredient string that comes after the
+    leading amount and unit — preserving parenthetical notes and other qualifiers.
+    e.g. "1 cup self-rising flour, (see Note)" → "self-rising flour, (see Note)"
+         "1 (29 ounce) can sliced peaches, undrained" → "sliced peaches, undrained"
+         "2 eggs" → "eggs"
+         "salt, to taste" → "salt, to taste"  (no number)
+    """
+    text = raw.strip()
+    m = _ORIG_NUM_RE.match(text)
+    if not m:
+        return text  # no leading number — entire string is the tail
+    rest = text[m.end():]
+    # Skip an inline parenthetical size descriptor, e.g. "(29 ounce)"
+    rest = re.sub(r'^\([^)]*\)\s*', '', rest)
+    # Skip the unit word(s)
+    if unit:
+        um = re.match(r'^(' + re.escape(unit) + r')\s*', rest, re.IGNORECASE)
+        if um:
+            rest = rest[um.end():]
+    return rest.strip()
+
+
 def parse_ingredient(raw: str, idx: int) -> dict:
     text = normalize_word_amounts(normalize_unicode(raw.strip()).strip())
 
@@ -134,6 +173,10 @@ def parse_ingredient(raw: str, idx: int) -> dict:
             amount = None
         remainder = text[match.end():].strip()
 
+        # Skip an inline size descriptor in parens between the number and the unit,
+        # e.g. "1 (29 ounce) can" or "2 (15 oz) cans" → treat as if it wasn't there.
+        remainder = re.sub(r"^\([^)]*\)\s*", "", remainder)
+
         # Check if next token is a known unit
         words = remainder.split()
         if words:
@@ -149,8 +192,10 @@ def parse_ingredient(raw: str, idx: int) -> dict:
         else:
             item = remainder
 
-    # Strip trailing parenthetical notes e.g. "(344g)"
-    item_clean = re.sub(r"\s*\(.*?\)", "", item).strip()
+    # Strip all parenthetical notes, e.g. "(344g)", "(see Note)"
+    item_clean = re.sub(r"\s*\([^)]*\)", "", item).strip()
+    # Strip any orphaned closing parens left behind if the site omitted the opening paren
+    item_clean = re.sub(r"\s*\)", "", item_clean).strip()
     # Strip trailing comma clauses e.g. ", plus more as needed", ", to taste", ", divided"
     item_clean = item_clean.split(",")[0].strip()
     # Strip leading descriptors like "large", "small", "medium", "fresh", etc.
@@ -161,10 +206,13 @@ def parse_ingredient(raw: str, idx: int) -> dict:
         flags=re.IGNORECASE,
     )
 
+    tail = compute_original_tail(raw.strip(), unit)
+
     return {
         "id": str(idx),
         "original": raw.strip(),
         "amount": amount,
         "unit": unit,
         "item": item_clean or item,
+        "tail": tail,
     }

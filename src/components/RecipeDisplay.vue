@@ -32,12 +32,17 @@
         <ul>
           <li v-for="ing in sub.ingredients" :key="ing.id">
             <div class="ingredient-row">
-              <span
-                class="amount"
-                :class="{ approx: amountInfo(ing).prefix }"
-                :title="amountInfo(ing).tooltip || undefined"
-              >{{ amountInfo(ing).prefix }}{{ amountInfo(ing).label }}</span>
-              <span class="item">{{ ing.item }}</span>
+              <template v-if="scaleFactor === 1">
+                <span class="item">{{ ing.original }}</span>
+              </template>
+              <template v-else>
+                <span
+                  class="amount"
+                  :class="{ approx: amountInfo(ing).prefix }"
+                  :title="amountInfo(ing).tooltip || undefined"
+                >{{ amountInfo(ing).prefix }}{{ amountInfo(ing).label }}</span>
+                <span class="item">{{ ing.tail || ing.item }}</span>
+              </template>
             </div>
             <input
               v-if="ing.amount !== null"
@@ -162,11 +167,16 @@ function buildPlainText() {
   for (const sub of props.recipe.subrecipes) {
     if (sub.name) lines.push(sub.name)
     for (const ing of sub.ingredients) {
-      const info = amountInfo(ing)
-      const amountStr = info.label
-        ? `${info.prefix}${info.label}${info.clipExtra ? ' ' + info.clipExtra : ''}`
-        : ''
-      lines.push(amountStr ? `${amountStr} ${ing.item}` : ing.item)
+      if (scaleFactor.value === 1) {
+        lines.push(ing.original)
+      } else {
+        const info = amountInfo(ing)
+        const amountStr = info.label
+          ? `${info.prefix}${info.label}${info.clipExtra ? ' ' + info.clipExtra : ''}`
+          : ''
+        const tail = ing.tail || ing.item
+        lines.push(amountStr ? `${amountStr} ${tail}` : tail)
+      }
     }
     lines.push('')
   }

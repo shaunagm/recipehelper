@@ -1,5 +1,5 @@
 import pytest
-from ingredient_parser import parse_ingredient
+from ingredient_parser import parse_ingredient, compute_original_tail
 
 
 def p(raw):
@@ -132,3 +132,58 @@ class TestItemParsing:
     def test_original_preserved(self):
         raw = "2 and 3/4 cups (344g) all-purpose flour"
         assert p(raw)["original"] == raw
+
+    def test_inline_size_descriptor_before_unit(self):
+        # "1 (29 ounce) can" — the inline size should be skipped so "can" is the unit
+        result = p("1 (29 ounce) can sliced peaches in heavy syrup, undrained")
+        assert result["amount"] == pytest.approx(1.0)
+        assert result["unit"] == "can"
+        assert result["item"] == "peaches in heavy syrup"  # "sliced" stripped as leading descriptor
+
+    def test_orphaned_closing_paren_stripped(self):
+        # recipe-scrapers sometimes strips the "(" but leaves the ")" in the text
+        result = p("1 cup self-rising flour, see Note for substitution)")
+        assert result["item"] == "self-rising flour"
+        assert ")" not in result["item"]
+
+    def test_comma_before_paren_note(self):
+        # e.g. "3/4 cup granulated sugar, (plus 2 additional Tablespoons for topping)"
+        result = p("3/4 cup granulated sugar, (plus 2 additional Tablespoons for topping)")
+        assert result["item"] == "granulated sugar"
+
+    def test_divided_with_trailing_paren_note(self):
+        # e.g. "1/2 cup butter, divided (and melted separately)"
+        result = p("1/2 cup butter, divided (and melted separately)")
+        assert result["item"] == "butter"
+
+
+class TestComputeOriginalTail:
+    def test_cup_with_note(self):
+        assert compute_original_tail(
+            "1 cup self-rising flour, (see Note for substitution)", "cup"
+        ) == "self-rising flour, (see Note for substitution)"
+
+    def test_unicode_fraction(self):
+        assert compute_original_tail(
+            "¾ cup granulated sugar, (plus 2 additional Tablespoons for topping)", "cup"
+        ) == "granulated sugar, (plus 2 additional Tablespoons for topping)"
+
+    def test_inline_paren_unit(self):
+        assert compute_original_tail(
+            "1 (29 ounce) can sliced peaches in heavy syrup, undrained", "can"
+        ) == "sliced peaches in heavy syrup, undrained"
+
+    def test_no_unit(self):
+        assert compute_original_tail("2 eggs", "") == "eggs"
+
+    def test_no_number(self):
+        assert compute_original_tail("salt, to taste", "") == "salt, to taste"
+
+    def test_divided_note_preserved(self):
+        assert compute_original_tail(
+            "1/2 cup butter, divided (and melted separately)", "cup"
+        ) == "butter, divided (and melted separately)"
+
+    def test_tail_stored_on_ingredient(self):
+        result = parse_ingredient("1 cup self-rising flour, (see Note)", 0)
+        assert result["tail"] == "self-rising flour, (see Note)"
