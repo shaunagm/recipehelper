@@ -122,7 +122,7 @@ const parseError = ref('')
 
 const APP_URL = window.location.origin + window.location.pathname
 
-const bookmarkletCode = `javascript:(function(){var s=document.querySelectorAll('script[type="application/ld+json"]');var j=Array.from(s).map(function(x){return x.textContent}).join('\\n');if(!j){alert('No recipe data found on this page.');}else{location.href='${APP_URL}#ld='+encodeURIComponent(j);}})();`
+const bookmarkletCode = `javascript:(function(){var s=document.querySelectorAll('script[type="application/ld+json"]');var blocks=Array.from(s).map(function(x){return x.textContent.trim();}).filter(Boolean);var recipe=blocks.find(function(b){return b.indexOf('"Recipe"')>-1;});if(!recipe){alert('No recipe data found on this page.');}else{location.href='${APP_URL}#ld='+encodeURIComponent(recipe);}})();`
 const bookmarkletHref = bookmarkletCode
 
 // When a blocking error occurs, nudge the user to the relevant tab
