@@ -1,6 +1,6 @@
 <template>
   <div id="app">
-    <h1>Recipe Helper</h1>
+    <h1>Recipe Helper 🧁</h1>
     <RecipeInput :collapsed="!!recipe" @recipe-loaded="onRecipeLoaded" />
     <p v-if="hashError" class="hash-error">{{ hashError }}</p>
     <RecipeDisplay v-if="recipe" :recipe="recipe" />
